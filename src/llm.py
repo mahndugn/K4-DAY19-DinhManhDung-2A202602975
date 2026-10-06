@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 import time
 from dataclasses import dataclass, fields
 from typing import Any
@@ -37,7 +38,12 @@ PRICES_PER_M = {
     "text-embedding-3-small": (0.02, 0.0),
     "text-embedding-3-large": (0.13, 0.0),
     "gemini-2.5-flash-lite": (0.10, 0.40),
-    # Gemini embedding pricing intentionally omitted: the current pricing page does not list gemini-embedding-001.
+    # Paid-tier equivalent, checked 2026-10-06 at ai.google.dev/gemini-api/docs/pricing.
+    # Actual free-tier billing is zero; see report/REPORT_KG.md for that distinction.
+    "gemini-3.5-flash-lite": (0.30, 2.50),
+    # Official launch pricing: developers.googleblog.com/en/gemini-embedding-available-gemini-api/
+    # The compatible endpoint may omit usage, so zero metered cost can mean missing tokens.
+    "gemini-embedding-001": (0.15, 0.0),
     "claude-opus-5-5": (4.00, 20.00),
     "claude-sonnet-5-5": (2.00, 10.00),
     "claude-haiku-4-5": (1.00, 5.00),
@@ -89,7 +95,7 @@ def _openai_client(provider: str):
     from openai import OpenAI
 
     cfg = PROVIDERS[provider]
-    return OpenAI(api_key=os.environ[cfg["key"]], base_url=cfg["base_url"])
+    return OpenAI(api_key=os.environ[cfg["key"]], base_url=cfg["base_url"], max_retries=0, timeout=90)
 
 class MeteredLLM:
     """`chat` and `embed` are drop-in `llm_fn` / `embedding_fn`; `usage` accumulates across calls."""
@@ -104,6 +110,7 @@ class MeteredLLM:
         self.embedding_model = f"{self.embed_provider}:{self.embed_model_id}"
         self._backend_name = self.embedding_model
         self.usage = Usage()
+        self._last_embed_request = 0.0
         self._chat_client: Any
         self._embed_client: Any
         if self.chat_provider == "anthropic":
@@ -120,18 +127,18 @@ class MeteredLLM:
             text, model, tokens_in, tokens_out = self._chat_anthropic(prompt)
         else:
             if json_mode and self.chat_provider != "gemini":
-                response = self._chat_client.chat.completions.create(
+                response = self._request(lambda: self._chat_client.chat.completions.create(
                     model=self.chat_model_id,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0,
                     response_format={"type": "json_object"},
-                )
+                ))
             else:
-                response = self._chat_client.chat.completions.create(
+                response = self._request(lambda: self._chat_client.chat.completions.create(
                     model=self.chat_model_id,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0,
-                )
+                ))
             text, model = response.choices[0].message.content or "", self.chat_model_id
             usage = response.usage
             tokens_in = usage.prompt_tokens if usage else 0
@@ -158,9 +165,39 @@ class MeteredLLM:
 
     def embed(self, text: str) -> list[float]:
         start = time.perf_counter()
-        response = self._embed_client.embeddings.create(model=self.embed_model_id, input=text)
+        # Gemini free tier allows 100 embedding requests/minute on this project.
+        # Pace requests instead of losing a partially built index to a burst of 429s.
+        if self.embed_provider == "gemini":
+            time.sleep(max(0.0, 0.65 - (time.monotonic() - self._last_embed_request)))
+            self._last_embed_request = time.monotonic()
+        response = self._request(lambda: self._embed_client.embeddings.create(model=self.embed_model_id, input=text))
         tokens = getattr(response.usage, "prompt_tokens", 0) or 0   # some OpenAI-compatible APIs omit usage
         self.usage += Usage(1, tokens, 0, price(self.embed_model_id, tokens), time.perf_counter() - start)
         return [float(value) for value in response.data[0].embedding]
+
+    @staticmethod
+    def _request(fn):
+        """Bounded retry for transient rate limits, retaining the same provider/model."""
+        from openai import RateLimitError
+
+        for attempt in range(4):
+            try:
+                return fn()
+            except RateLimitError as error:
+                message = str(error)
+                if attempt == 3 or any(code in message for code in (
+                    "insufficient_quota", "credit_balance_exhausted", "RequestsPerDay", "limit: 0"
+                )):
+                    raise
+                delay = re.search(r"retry in ([\d.]+)s|retryDelay['\"]?:\s*['\"](\d+)s", message)
+                seconds = float(next(g for g in delay.groups() if g)) + 1 if delay else 5 * (attempt + 1)
+                if seconds > 120:
+                    raise
+                print(f"[rate-limit] Đợi {seconds:.1f}s rồi thử lại cùng provider (lần {attempt + 1}/3).", flush=True)
+                # Short slices keep each blocking wait below a minute.
+                while seconds > 0:
+                    pause = min(seconds, 30)
+                    time.sleep(pause)
+                    seconds -= pause
 
     __call__ = embed

@@ -1,0 +1,135 @@
+kg_count Query
+connection status: connected
+Instance:
+neo4j://localhost:7687
+. Click to open instance menu
+Database:
+neo4j
+. Click to open database menu
+User:
+neo4j
+. Click to open database user menu
+Connect your instance to Aura console for more tools and features
+Queries
+No queries
+Queries will be automatically saved once you start writing in the tab editor
+Create new query
+Stream
+$
+MATCH (n) RETURN labels(n)[0] AS label, count(*) AS n ORDER BY n DESC;
+Run
+neo4j$
+MATCH (n) RETURN labels(n)[0] AS label, count(*) AS n ORDER BY n DESC;
+Run
+Table
+Raw
+Press Escape to clear input.
+Graph chip
+label
+n
+1
+"Clause"
+99
+2
+"Person"
+40
+3
+"Article"
+18
+4
+"Case"
+13
+5
+"Crime"
+13
+6
+"Substance"
+10
+7
+"Location"
+5
+Started streaming 7 records after 1 ms and completed after 2 ms.
+kg_cross_kb Query
+connection status: connected
+Instance:
+neo4j://localhost:7687
+. Click to open instance menu
+Database:
+neo4j
+. Click to open database menu
+User:
+neo4j
+. Click to open database user menu
+Connect your instance to Aura console for more tools and features
+Queries
+No queries
+Queries will be automatically saved once you start writing in the tab editor
+Create new query
+Stream
+$
+MATCH p=(:Person)-[:INVOLVED_IN]->(:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(:Article) RETURN p LIMIT 25;
+Run
+neo4j$
+MATCH p=(:Person)-[:INVOLVED_IN]->(:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(:Article) RETURN p LIMIT 25;
+Run
+Graph
+Table
+Raw
+Press Escape to clear input.
+Results overview
+Nodes (34)
+* (34)
+Article (3)
+Case (7)
+Crime (3)
+Person (21)
+Relationships (35)
+* (35)
+CHARGED_WITH (7)
+DEFINES (3)
+INVOLVED_IN (25)
+Started streaming 25 records after 1 ms and completed after 7 ms.
+kg_my_case Query
+connection status: connected
+Instance:
+neo4j://localhost:7687
+. Click to open instance menu
+Database:
+neo4j
+. Click to open database menu
+User:
+neo4j
+. Click to open database user menu
+Connect your instance to Aura console for more tools and features
+Queries
+No queries
+Queries will be automatically saved once you start writing in the tab editor
+Create new query
+Stream
+$
+MATCH p=(:Person {name:'Cái Quang Huy'})-[:INVOLVED_IN]->(k:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(:Article) OPTIONAL MATCH q=(k)-[:INVOLVES|LOCATED_IN]->() RETURN p,q;
+Run
+neo4j$
+MATCH p=(:Person {name:'Cái Quang Huy'})-[:INVOLVED_IN]->(k:Case)-[:CHARGED_WITH]->(:Crime)<-[:DEFINES]-(:Article) OPTIONAL MATCH q=(k)-[:INVOLVES|LOCATED_IN]->() RETURN p,q;
+Run
+Graph
+Table
+Raw
+Press Escape to clear input.
+Results overview
+Nodes (8)
+* (8)
+Article (1)
+Case (2)
+Crime (1)
+Location (1)
+Person (1)
+Substance (2)
+Relationships (11)
+* (11)
+CHARGED_WITH (2)
+DEFINES (1)
+INVOLVED_IN (2)
+INVOLVES (4)
+LOCATED_IN (2)
+Started streaming 6 records after 2 ms and completed after 6 ms.
